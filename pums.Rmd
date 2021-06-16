@@ -1,0 +1,107 @@
+---
+title: "Exploring PUMS for NJ"
+header-includes:
+   - \usepackage{hyperref}
+output:
+    pdf_document
+---
+```{r echo = F}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+## Use shapiro test to assess normality
+```{r}
+shapiro = function(x){
+  return(shapiro.test(x)$p.value)
+}
+
+ks = function(x){
+  return(ks.test(x, "pnorm", mean = mean(x), sd = sd(x))$p.value)
+}
+```
+
+## Read in NJ Pums data
+```{r}
+pumsnj = read.csv('psam_h34.csv')
+
+# Some numbers for house values
+sum(!is.na(pumsnj$VALP)) #24423 non NA house values in NJ
+mean(sapply(split(pumsnj, pumsnj$PUMA), function(x){sum(is.na(x$VALP))})) #average 211 people per PUMA in NJ
+length((sapply(split(pumsnj, pumsnj$PUMA), function(x){sum(is.na(x$VALP))}))) #73 different PUMAS in NJ, but 21 counties
+
+# Some numbers for household income
+sum(!is.na(pumsnj$HINCP)) #33660 non NA house values in NJ
+mean(sapply(split(pumsnj, pumsnj$PUMA), function(x){sum(is.na(x$HINCP))})) #average 85 people per PUMA in NJ
+length((sapply(split(pumsnj, pumsnj$PUMA), function(x){sum(is.na(x$HINCP))}))) #73 different PUMAS in NJ, but 21 counties
+```
+
+## Normality within PUMAs? NO
+```{r}
+# Examine normality of house values within PUMAs
+pvals = sapply(split(log(pumsnj$VALP),pumsnj$PUMA), shapiro)
+mean(pvals>0.05, na.rm = T) #all rejected
+
+# Examine normality of household incomes within PUMAs
+pvals = sapply(split(log(pumsnj$HINCP + 1),pumsnj$PUMA), shapiro) # some are 0 so offset by 1 then log 
+mean(pvals>0.05, na.rm = T) #all rejected
+```
+
+\newpage
+## Link PUMAs to FIPS in NJ (for now just assume PUMAs are smaller than FIPS)
+Using equivalency at \url{https://www2.census.gov/geo/pdfs/reference/puma/2010_PUMA_Equivalency_Summary_Levels.pdf}
+```{r}
+library(gdata)
+equiv <- read.delim('PUMSEQ10_34.txt', stringsAsFactor = FALSE, header = F)
+head(equiv) 
+# Messy.
+# example: 796 34 017797950 0101 001 00882270  
+# 796 state random puma 
+
+codes = unlist(lapply(strsplit(equiv[,1][which(startsWith(equiv[,1], '796') == T)], "\\s+"), function(x){x[1]}))
+# Extract PUMAs
+pumas = as.numeric(substring(codes, 15, 18))
+# Extract FIPS
+fips = paste(substring(codes, 4, 5), substring(codes, 19,21), sep = "")
+# Dataframe matchig PUMAs to FIPS
+puma.fips.match = data.frame(pumas,fips)
+
+# Add fips to previous dataframe
+pumsnj$fips = puma.fips.match$fips[match(pumsnj$PUMA, puma.fips.match$pumas)]
+length(unique(pumsnj$fips)) #2 counties of 21 excluded from pums sample?? Is this because multiple small counties are contained within a single PUMA?
+
+# Number of individuals sampled from each fips
+sapply(split(log(pumsnj$VALP),pumsnj$fips), length)
+```
+
+## Normality within FIPS?? NO
+```{r}
+# Examine normality of house values within fips
+pvals = sapply(split(log(pumsnj$VALP),pumsnj$fips), shapiro)
+mean(pvals>0.05, na.rm = T)
+
+# Examine normality of household incomes within fips
+pvals = sapply(split(log(pumsnj$HINCP + 1),pumsnj$fips), shapiro) # some are 0 so offset by 1 then log
+mean(pvals>0.05, na.rm = T)
+```
+
+## Visually assess normality
+```{r}
+# Within PUMA
+par(mfrow = c(2,2))
+sapply(split(pumsnj, pumsnj$PUMA), function(x){hist(log(x$VALP))})
+
+par(mfrow = c(2,2))
+sapply(split(pumsnj, pumsnj$PUMA), function(x){hist(log(x$HINCP))})
+
+# Within FIPS
+par(mfrow = c(2,2))
+sapply(split(pumsnj, pumsnj$fips), function(x){hist(log(x$VALP))})
+
+par(mfrow = c(2,2))
+sapply(split(pumsnj, pumsnj$fips), function(x){hist(log(x$HINCP))})
+```
+
+
+
+
